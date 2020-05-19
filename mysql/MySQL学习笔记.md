@@ -167,7 +167,7 @@ CREATE TABLE students (
 
 ### 1NF
 
-只要字段值还可以继续拆分，就不满足第一范式。
+只要字段值还可以继续拆分，就不满足第一范式。例如：拆分地址 address ->> country | privence | city | detail
 
 范式设计得越详细，对某些实际操作可能会更好，但并非都有好处，需要对项目的实际情况进行设定。
 
@@ -367,7 +367,7 @@ SELECT * FROM student WHERE class = '95031' or sex = '女';
 SELECT * FROM student ORDER BY class DESC;
 SELECT * FROM student ORDER BY class ASC;
 
--- 以 c_no 升序、degree 降序查询 score 表的所有行
+-- 以 c_no 升序、degree 降序查询 score 表的所有行  切忌用and
 SELECT * FROM score ORDER BY c_no ASC, degree DESC;
 
 -- 查询 "95031" 班的学生人数
@@ -383,7 +383,7 @@ SELECT s_no, c_no FROM score WHERE degree = (SELECT MAX(degree) FROM score);
 SELECT s_no, c_no, degree FROM score ORDER BY degree DESC LIMIT 0, 1;
 ```
 
-### 分组计算平均成绩
+### 分组计算平均成绩（group by）
 
 **查询每门课的平均成绩。**
 
@@ -397,7 +397,7 @@ SELECT AVG(degree) FROM score WHERE c_no = '6-166';
 SELECT c_no, AVG(degree) FROM score GROUP BY c_no;
 ```
 
-### 分组条件与模糊查询
+### 分组条件与模糊查询（having）
 
 **查询 `score` 表中至少有 2 名学生选修，并以 3 开头的课程的平均分数。**
 
@@ -637,7 +637,9 @@ AND score.c_no = course.no;
 
 **查询 `95031` 班学生每门课程的平均成绩。**
 
-在 `score` 表中根据 `student`  表的学生编号筛选出学生的课堂号和成绩：
+方法一（子查询，用in）：
+1. 筛选学生表中班级是'95031'的所有学生编号
+2. 在 `score` 表中根据 `student`  表的学生编号筛选出学生的课堂号和成绩：
 
 ```mysql
 -- IN (..): 将筛选出的学生号当做 s_no 的条件查询
@@ -669,6 +671,17 @@ GROUP BY c_no;
 | 6-166 |     80.0000 |
 +-------+-------------+
 ```
+
+方法二（自己摸索的多表查询）：结果同上
+```
+select c_no, avg(degree)
+from score,
+     student
+where s_no = no
+  and class = '95031'
+group by c_no
+```
+
 
 ### 子查询 - 1
 
@@ -824,6 +837,20 @@ SELECT name FROM teacher WHERE no IN (
         SELECT c_no FROM score GROUP BY c_no HAVING COUNT(*) > 5
     )
 );
+```
+
+用多表联合查询重新写sql语句
+
+```
+select teacher.name, course.no
+from teacher,
+     course
+where course.no in (
+    select c_no
+    from score
+    group by c_no
+    having count(c_no) > 5
+) and t_no = teacher.no
 ```
 
 ### 子查询 - 3
@@ -996,6 +1023,7 @@ SELECT degree FROM score;
 SELECT * FROM score a WHERE degree < (
     (SELECT AVG(degree) FROM score b WHERE a.c_no = b.c_no)
 );
+疑问 ？？？  这里数据库引擎怎么查询子课程的平均分
 +------+-------+--------+
 | s_no | c_no  | degree |
 +------+-------+--------+
@@ -1047,6 +1075,10 @@ SELECT * FROM student;
 
 -- 只查询性别为男，然后按 class 分组，并限制 class 行大于 1。
 SELECT class FROM student WHERE sex = '男' GROUP BY class HAVING COUNT(*) > 1;
+
+也可以将where sex = '男' 放入count里面，如下：
+select class from student group by class having count(sex='男')>1 ;
+
 +-------+
 | class |
 +-------+
@@ -1972,3 +2004,9 @@ INSERT INTO user VALUES (7, '王小花', 1000);
 此时会发生什么呢？由于现在的隔离级别是 **SERIALIZABLE ( 串行化 )** ，串行化的意思就是：假设把所有的事务都放在一个串行的队列中，那么所有的事务都会按照**固定顺序执行**，执行完一个事务后再继续执行下一个事务的**写入操作** ( **这意味着队列中同时只能执行一个事务的写入操作** ) 。
 
 根据这个解释，小王在插入数据时，会出现等待状态，直到小张执行 `COMMIT` 结束它所处的事务，或者出现等待超时。
+
+但是串行化的问题是性能特差！！！
+
+隔离级别越高，性能越差
+
+mysql 的默认隔离级别是REPEATABLE-READ
